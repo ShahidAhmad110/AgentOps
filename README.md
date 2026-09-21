@@ -1,7 +1,7 @@
 # AgentOps
 
 AgentOps is an agentic operations and knowledge platform. This repository is
-being implemented in phases from the specifications in [`ducs/`](ducs/).
+being implemented in phases from the specifications in [`docs/`](docs/).
 
 ## Phase 3 foundation
 

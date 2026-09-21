@@ -12,3 +12,4 @@ wheels/
 # Local configuration and test artifacts
 .env
 .pytest_cache/
+storage/
