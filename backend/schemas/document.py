@@ -7,6 +7,8 @@ class DocumentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    user_id: UUID | None = None
+    organization_id: UUID | None = None
     filename: str
     content_type: str
     file_extension: str

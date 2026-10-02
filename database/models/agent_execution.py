@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import ForeignKey, Index, JSON, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, JSON, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database.base import Base, TimestampMixin
@@ -28,7 +28,7 @@ class AgentRun(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="RUNNING", index=True)
     final_response: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    completed_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class AgentStep(Base, TimestampMixin):

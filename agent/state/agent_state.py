@@ -25,3 +25,4 @@ class AgentState(TypedDict, total=False):
     status: AgentStatus
     final_response: str | None
     run_id: UUID | None
+    route: str | None

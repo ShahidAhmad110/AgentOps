@@ -1,0 +1,16 @@
+.git
+.gitignore
+.env
+.venv
+.venv*
+__pycache__
+*.pyc
+.pytest_cache
+node_modules
+**/node_modules
+.next
+**/.next
+*.log
+storage/documents/*
+!storage/documents/.gitkeep
+.agents

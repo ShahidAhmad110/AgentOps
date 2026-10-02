@@ -27,23 +27,39 @@ class AuthService:
         existing_user = await self.session.execute(
             select(User).where(or_(User.email == email, User.username == username))
         )
-        if existing_user.scalar_one_or_none() is not None:
+        if existing_user.scalars().first() is not None:
             raise AuthenticationError("A user with that email or username already exists.")
 
-        existing_org = await self.session.execute(
-            select(Organization).where(Organization.slug == request.organization_slug)
-        )
-        if existing_org.scalar_one_or_none() is not None:
-            raise AuthenticationError("An organization with that slug already exists.")
+        org_name = request.organization_name.strip()
+        slug = request.organization_slug.strip().lower()
 
-        organization = Organization(name=request.organization_name.strip(), slug=request.organization_slug)
+        # Check existing organizations by slug and by name
+        res_slug = await self.session.execute(select(Organization).where(Organization.slug == slug))
+        org_by_slug = res_slug.scalar_one_or_none()
+
+        res_name = await self.session.execute(select(Organization).where(Organization.name == org_name))
+        org_by_name = res_name.scalar_one_or_none()
+
+        if org_by_slug is not None and org_by_name is not None:
+            if org_by_slug.id != org_by_name.id:
+                raise AuthenticationError("An organization with that name or slug already exists.")
+            organization = org_by_slug
+        elif org_by_slug is not None and org_by_name is None:
+            organization = org_by_slug
+        elif org_by_name is not None and org_by_slug is None:
+            raise AuthenticationError("An organization with that name already exists.")
+        else:
+            organization = Organization(name=org_name, slug=slug, is_active=True)
+            self.session.add(organization)
+            await self.session.flush()
+
         user = User(
             email=email,
             username=username,
             password_hash=self.password_hasher.hash(request.password),
             role="user",
             is_active=True,
-            organization=organization,
+            organization_id=organization.id,
         )
         self.session.add(user)
         await self.session.commit()
@@ -52,11 +68,21 @@ class AuthService:
 
     async def login(self, request: LoginRequest) -> tuple[User, str]:
         identity = request.username_or_email.strip()
+        if not identity or not request.password:
+            raise AuthenticationError("Invalid credentials.")
         result = await self.session.execute(
-            select(User).where(or_(User.email == identity.lower(), User.username == identity))
+            select(User).where(
+                or_(User.email == identity.lower(), User.username == identity),
+                User.deleted_at.is_(None),
+            )
         )
-        user = result.scalar_one_or_none()
-        if user is None or not user.is_active or not self.password_hasher.verify(request.password, user.password_hash):
+        user = result.scalars().first()
+        if user is None or not user.is_active:
+            raise AuthenticationError("Invalid credentials.")
+        try:
+            if not self.password_hasher.verify(request.password, user.password_hash):
+                raise AuthenticationError("Invalid credentials.")
+        except Exception:
             raise AuthenticationError("Invalid credentials.")
         return user, self._issue_token(user)
 

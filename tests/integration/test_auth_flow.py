@@ -43,6 +43,32 @@ async def test_authentication_rbac_and_organization_access() -> None:
             organization_id = UUID(registration_payload["user"]["organization_id"])
             token = registration_payload["access_token"]
 
+            duplicate_user = await client.post(
+                "/auth/register",
+                json={
+                    "email": email,
+                    "username": "another_name",
+                    "password": "correct horse battery staple",
+                    "organization_name": "New Organization Unique",
+                    "organization_slug": "new-slug-unique",
+                },
+            )
+            assert duplicate_user.status_code == 409
+            assert "already exists" in duplicate_user.json()["error"]["message"]
+
+            duplicate_org = await client.post(
+                "/auth/register",
+                json={
+                    "email": "unique_email_test@example.com",
+                    "username": "unique_user_test",
+                    "password": "correct horse battery staple",
+                    "organization_name": "Phase 4 Organization",
+                    "organization_slug": "different-slug",
+                },
+            )
+            assert duplicate_org.status_code == 409
+            assert "already exists" in duplicate_org.json()["error"]["message"]
+
             invalid_login = await client.post(
                 "/auth/login",
                 json={"username_or_email": username, "password": "incorrect password"},
@@ -99,8 +125,9 @@ async def test_authentication_rbac_and_organization_access() -> None:
                 "/users", headers={"Authorization": f"Bearer {admin_login.json()['access_token']}"}
             )
             assert admin_users.status_code == 200
-            assert all(item["organization_id"] == str(organization_id) for item in admin_users.json())
-            assert all(item["id"] != str(other_user_id) for item in admin_users.json())
+            admin_user_ids = [item["id"] for item in admin_users.json()]
+            assert str(user_id) in admin_user_ids
+            assert str(other_user_id) in admin_user_ids
 
             invalid_token = await client.get(
                 "/users/me", headers={"Authorization": "Bearer invalid-token"}

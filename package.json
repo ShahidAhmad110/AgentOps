@@ -1,0 +1,13 @@
+{
+  "name": "agentops",
+  "version": "1.0.0",
+  "description": "AgentOps - Autonomous Agent Operations Platform",
+  "scripts": {
+    "dev": "python run_project.py",
+    "start": "python run_project.py",
+    "backend": "uv run uvicorn main:app --reload --host 127.0.0.1 --port 8000",
+    "frontend": "npm run dev --prefix frontend",
+    "worker": "uv run python -m workers.runner",
+    "test": "uv run pytest"
+  }
+}

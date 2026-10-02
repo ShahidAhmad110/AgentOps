@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -25,6 +26,8 @@ class UserResponse(BaseModel):
     role: str
     is_active: bool
     organization_id: UUID | None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 class OrganizationResponse(BaseModel):
@@ -45,3 +48,15 @@ class TokenResponse(BaseModel):
 
 class UserWithOrganizationResponse(UserResponse):
     organization: OrganizationResponse | None = None
+
+
+class UserStatusUpdateRequest(BaseModel):
+    is_active: bool
+
+
+class UserListResponse(BaseModel):
+    users: list[UserWithOrganizationResponse]
+    total: int
+    active_count: int
+    inactive_count: int
+

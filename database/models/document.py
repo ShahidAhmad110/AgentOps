@@ -13,9 +13,14 @@ class Document(Base, TimestampMixin, SoftDeleteMixin):
     __table_args__ = (
         Index("ix_documents_status", "status"),
         Index("ix_documents_checksum", "checksum"),
+        Index("ix_documents_user_id", "user_id"),
+        Index("ix_documents_organization_id", "organization_id"),
+        Index("ix_documents_org_status", "organization_id", "status"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     content_type: Mapped[str] = mapped_column(String(150), nullable=False)
     file_extension: Mapped[str] = mapped_column(String(16), nullable=False)

@@ -21,6 +21,38 @@ class AgentExecutionRepository:
         result = await self.session.execute(select(AgentRun).where(AgentRun.id == run_id))
         return result.scalar_one_or_none()
 
+    async def list_runs_scoped(
+        self, user_id: UUID, organization_id: UUID, limit: int, offset: int
+    ) -> list[AgentRun]:
+        result = await self.session.execute(
+            select(AgentRun)
+            .where(AgentRun.user_id == user_id, AgentRun.organization_id == organization_id)
+            .order_by(AgentRun.created_at.desc(), AgentRun.id)
+            .limit(limit)
+            .offset(offset)
+        )
+        return list(result.scalars().all())
+
+    async def list_steps(self, run_ids: list[UUID]) -> list[AgentStep]:
+        if not run_ids:
+            return []
+        result = await self.session.execute(
+            select(AgentStep)
+            .where(AgentStep.run_id.in_(run_ids))
+            .order_by(AgentStep.run_id, AgentStep.sequence)
+        )
+        return list(result.scalars().all())
+
+    async def list_tool_calls(self, run_ids: list[UUID]) -> list[ToolCall]:
+        if not run_ids:
+            return []
+        result = await self.session.execute(
+            select(ToolCall)
+            .where(ToolCall.run_id.in_(run_ids))
+            .order_by(ToolCall.run_id, ToolCall.created_at, ToolCall.id)
+        )
+        return list(result.scalars().all())
+
     async def create_step(self, step: AgentStep) -> AgentStep:
         self.session.add(step)
         await self.session.flush()

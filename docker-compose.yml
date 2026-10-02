@@ -1,6 +1,8 @@
 services:
   postgres:
     image: postgres:16-alpine
+    container_name: agentops-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_DB: agentops
       POSTGRES_USER: agentops
@@ -14,6 +16,87 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - agentops-network
+
+  backend:
+    image: shahidahmad110/agentops-backend:latest
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    container_name: agentops-backend
+    restart: unless-stopped
+    environment:
+      APP_NAME: AgentOps
+      APP_ENV: production
+      DEBUG: "false"
+      LOG_LEVEL: INFO
+      DATABASE_URL: postgresql+asyncpg://agentops:agentops@postgres:5432/agentops
+      DOCUMENT_STORAGE_PATH: /app/storage/documents
+      MAX_DOCUMENT_SIZE_BYTES: 10485760
+      AUTH_SECRET_KEY: ${AUTH_SECRET_KEY:-replace-with-a-secure-random-secret-key-32chars}
+      ACCESS_TOKEN_LIFETIME_SECONDS: 3600
+    ports:
+      - "8000:8000"
+    volumes:
+      - document_storage:/app/storage/documents
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - agentops-network
+
+  worker:
+    image: shahidahmad110/agentops-worker:latest
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.worker
+    container_name: agentops-worker
+    restart: unless-stopped
+    environment:
+      APP_NAME: AgentOps
+      APP_ENV: production
+      LOG_LEVEL: INFO
+      DATABASE_URL: postgresql+asyncpg://agentops:agentops@postgres:5432/agentops
+      DOCUMENT_STORAGE_PATH: /app/storage/documents
+      AUTH_SECRET_KEY: ${AUTH_SECRET_KEY:-replace-with-a-secure-random-secret-key-32chars}
+    volumes:
+      - document_storage:/app/storage/documents
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    networks:
+      - agentops-network
+
+  frontend:
+    image: shahidahmad110/agentops-frontend:latest
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+    container_name: agentops-frontend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      BACKEND_URL: http://backend:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - agentops-network
+
+networks:
+  agentops-network:
+    driver: bridge
 
 volumes:
   postgres_data:
+  document_storage:

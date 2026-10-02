@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 
 from agent.llm import IntentDecision, LLMClient, LLMError
 from agent.persistence import ExecutionRecorder
+from agent.policies import EMPTY_RETRIEVAL_MESSAGE, SANITIZED_FAILURE_MESSAGE
 from agent.state.agent_state import AgentState
 from mcp.schemas.context import ToolContext
 from mcp.servers.registry import MCPServer
@@ -13,7 +14,7 @@ from mcp.servers.registry import MCPServer
 def _context(state: AgentState) -> ToolContext:
     return ToolContext(
         user_id=state["user_id"],
-        organization_id=state["organization_id"],
+        organization_id=state.get("organization_id"),
         is_authenticated=True,
     )
 
@@ -38,9 +39,14 @@ async def _step(
 async def receive_request(state: AgentState, recorder: ExecutionRecorder) -> AgentState:
     request = state.get("request", "").strip()
     if not request:
+        state["request"] = ""
+        state["steps"] = []
+        state["tool_calls"] = []
         state["errors"] = ["The agent request cannot be empty."]
         state["status"] = "failed"
-        state["final_response"] = "The request could not be processed."
+        state["final_response"] = SANITIZED_FAILURE_MESSAGE
+        state["run_id"] = await recorder.start_run(state)
+        await _step(state, recorder, "receive_request", "failed", "The agent request cannot be empty.")
         return state
     state["request"] = request
     state["steps"] = []
@@ -56,6 +62,8 @@ async def receive_request(state: AgentState, recorder: ExecutionRecorder) -> Age
 async def analyze_intent(
     state: AgentState, llm: LLMClient, recorder: ExecutionRecorder
 ) -> AgentState:
+    if state.get("errors") or state.get("status") == "failed":
+        return state
     try:
         decision: IntentDecision = await llm.analyze_intent(
             state["request"], state.get("conversation_context", [])
@@ -72,7 +80,7 @@ async def analyze_intent(
 
 
 async def route_request(state: AgentState, recorder: ExecutionRecorder) -> AgentState:
-    if state.get("errors"):
+    if state.get("errors") or state.get("status") == "failed":
         state["route"] = "handle_failure"
     elif state.get("intent") == "knowledge":
         state["route"] = "retrieve_knowledge"
@@ -91,16 +99,23 @@ async def route_request(state: AgentState, recorder: ExecutionRecorder) -> Agent
 async def retrieve_knowledge(
     state: AgentState, mcp_server: MCPServer, recorder: ExecutionRecorder
 ) -> AgentState:
-    result = await mcp_server.call(
-        "search_documents", {"query": state["request"], "limit": 5}, _context(state)
-    )
-    _store_tool_result(state, "search_documents", {"query": state["request"], "limit": 5}, result)
-    await _record_tool_call(state, recorder, "search_documents", {"query": state["request"], "limit": 5}, result)
+    arguments = dict(state.get("tool_arguments", {}))
+    query = arguments.get("query") or state.get("request", "")
+    limit = int(arguments.get("limit") or 5)
+    payload = {"query": query, "limit": limit}
+    try:
+        result = await mcp_server.call("search_documents", payload, _context(state))
+    except Exception as exc:
+        return await fail(state, recorder, "retrieve_knowledge", "The knowledge retrieval encountered an error.", exc)
+    _store_tool_result(state, "search_documents", payload, result)
+    await _record_tool_call(state, recorder, "search_documents", payload, result)
     await _step(state, recorder, "retrieve_knowledge", "completed" if result.success else "failed")
     return state
 
 
 async def select_tool(state: AgentState, recorder: ExecutionRecorder) -> AgentState:
+    if state.get("errors") or state.get("status") == "failed":
+        return state
     if not state.get("selected_tool"):
         await fail(state, recorder, "select_tool", "No operational tool was selected.", None)
     else:
@@ -111,12 +126,17 @@ async def select_tool(state: AgentState, recorder: ExecutionRecorder) -> AgentSt
 async def execute_tool(
     state: AgentState, mcp_server: MCPServer, recorder: ExecutionRecorder
 ) -> AgentState:
+    if state.get("errors") or state.get("status") == "failed":
+        return state
     tool_name = state.get("selected_tool")
     arguments = state.get("tool_arguments", {})
     if not tool_name:
         await fail(state, recorder, "execute_tool", "No tool was selected.", None)
         return state
-    result = await mcp_server.call(tool_name, arguments, _context(state))
+    try:
+        result = await mcp_server.call(tool_name, arguments, _context(state))
+    except Exception as exc:
+        return await fail(state, recorder, "execute_tool", "The tool operation encountered an error.", exc)
     _store_tool_result(state, tool_name, arguments, result)
     await _record_tool_call(state, recorder, tool_name, arguments, result)
     await _step(state, recorder, "execute_tool", "completed" if result.success else "failed")
@@ -124,6 +144,9 @@ async def execute_tool(
 
 
 async def validate_result(state: AgentState, recorder: ExecutionRecorder) -> AgentState:
+    if state.get("status") == "failed":
+        await _step(state, recorder, "validate_result", "failed", "Execution marked as failed.")
+        return state
     result = state.get("tool_result")
     if result is not None and not result.get("success", False):
         error = result.get("error", {}).get("message", "The tool operation failed.")
@@ -151,7 +174,7 @@ async def generate_response(
 
 async def handle_failure(state: AgentState, recorder: ExecutionRecorder) -> AgentState:
     state["status"] = "failed"
-    state["final_response"] = "The agent could not complete the request."
+    state["final_response"] = SANITIZED_FAILURE_MESSAGE
     await _step(state, recorder, "handle_failure", "completed")
     return state
 

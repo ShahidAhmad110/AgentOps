@@ -1,0 +1,47 @@
+# syntax=docker/dockerfile:1
+FROM python:3.13-slim AS base
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=off \
+    PIP_DISABLE_PIP_VERSION_CHECK=on
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv for fast, reliable dependency management
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+
+# Copy dependency definition
+COPY pyproject.toml .python-version uv.lock* ./
+
+# Install python dependencies into system/virtualenv
+RUN uv pip install --system -r pyproject.toml
+
+# Copy project source files
+COPY main.py alembic.ini ./
+COPY backend/ ./backend/
+COPY database/ ./database/
+COPY documents/ ./documents/
+COPY mcp/ ./mcp/
+COPY agent/ ./agent/
+COPY workers/ ./workers/
+COPY scripts/ ./scripts/
+
+# Create non-root system user for security hardening
+RUN groupadd -r agentops && useradd -r -g agentops -d /app agentops \
+    && mkdir -p /app/storage/documents \
+    && chown -R agentops:agentops /app
+
+USER agentops
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

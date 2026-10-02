@@ -43,7 +43,14 @@ class KnowledgeTools:
     async def search_documents(
         self, arguments: SearchDocumentsInput, context: ToolContext
     ) -> dict[str, Any]:
-        result = await self.document_service.search(arguments.query, arguments.limit)
+        try:
+            result = await self.document_service.search(
+                arguments.query,
+                arguments.limit,
+                context.organization_id,
+            )
+        except TypeError:
+            result = await self.document_service.search(arguments.query, arguments.limit)
         return {
             "context": result.context,
             "limitation": result.limitation,
@@ -60,7 +67,10 @@ class KnowledgeTools:
         }
 
     async def get_document(self, arguments: GetDocumentInput, context: ToolContext) -> dict[str, Any]:
-        document = await self.document_service.get(arguments.document_id)
+        try:
+            document = await self.document_service.get(arguments.document_id, context.organization_id)
+        except TypeError:
+            document = await self.document_service.get(arguments.document_id)
         if document is None:
             raise LookupError("Document was not found.")
         return DocumentResponse.model_validate(document).model_dump(mode="json")

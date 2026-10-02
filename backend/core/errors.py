@@ -45,8 +45,11 @@ def register_exception_handlers(application: FastAPI) -> None:
 
     @application.exception_handler(Exception)
     async def handle_unexpected_error(request: Request, error: Exception) -> JSONResponse:
-        logger.exception("Unhandled request error", extra={"path": request.url.path})
+        logger.exception("Unhandled request error on %s: %s", request.url.path, error, extra={"path": request.url.path})
+        error_msg = "An unexpected error occurred."
+        if isinstance(error, (ConnectionRefusedError, OSError)) or "refused" in str(error).lower() or "connection" in str(error).lower():
+            error_msg = "Database connection error. Please verify PostgreSQL is running and migrations have been applied."
         return JSONResponse(
             status_code=500,
-            content={"error": {"code": "INTERNAL_ERROR", "message": "An unexpected error occurred."}},
+            content={"error": {"code": "INTERNAL_ERROR", "message": error_msg}},
         )

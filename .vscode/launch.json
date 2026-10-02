@@ -1,0 +1,20 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run AgentOps (All Services)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/run_project.py",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Run FastAPI Backend",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["main:app", "--reload", "--host", "127.0.0.1", "--port", "8000"],
+      "console": "integratedTerminal"
+    }
+  ]
+}

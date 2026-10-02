@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.dependencies.auth import get_current_user, get_token_service
@@ -21,7 +22,14 @@ async def register(
     try:
         user, token = await AuthService(session, token_service).register(request)
     except AuthenticationError as exc:
+        await session.rollback()
         raise APIError("REGISTRATION_ERROR", str(exc), status_code=409) from exc
+    except IntegrityError as exc:
+        await session.rollback()
+        raise APIError("REGISTRATION_ERROR", "A user or organization with those details already exists.", status_code=409) from exc
+    except ValueError as exc:
+        await session.rollback()
+        raise APIError("REGISTRATION_ERROR", str(exc), status_code=400) from exc
     return TokenResponse(
         access_token=token,
         expires_in=token_service.lifetime_seconds,
@@ -39,6 +47,8 @@ async def login(
         user, token = await AuthService(session, token_service).login(request)
     except AuthenticationError as exc:
         raise APIError("INVALID_CREDENTIALS", str(exc), status_code=401) from exc
+    except ValueError as exc:
+        raise APIError("INVALID_CREDENTIALS", str(exc), status_code=400) from exc
     return TokenResponse(
         access_token=token,
         expires_in=token_service.lifetime_seconds,
